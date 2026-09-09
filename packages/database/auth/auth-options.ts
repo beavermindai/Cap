@@ -10,6 +10,7 @@ import AppleProvider from "next-auth/providers/apple";
 import EmailProvider from "next-auth/providers/email";
 import GoogleProvider from "next-auth/providers/google";
 import type { Provider } from "next-auth/providers/index";
+import type { OAuthConfig } from "next-auth/providers/oauth";
 import WorkOSProvider from "next-auth/providers/workos";
 import { sendEmail } from "../emails/config.ts";
 import { db } from "../index.ts";
@@ -53,6 +54,61 @@ export async function decodeSessionToken(
 	return token;
 }
 
+type BeavermindProfile = {
+	sub: string;
+	email?: string;
+	email_verified?: boolean;
+	name?: string;
+	given_name?: string;
+	family_name?: string;
+	picture?: string;
+};
+
+/**
+ * Beavermind Identity (auth.beavermind.cloud), a Better Auth OAuth 2.1 / OIDC
+ * provider. Configured through BEAVERMIND_ISSUER, BEAVERMIND_CLIENT_ID and
+ * BEAVERMIND_CLIENT_SECRET; when all three are present it is the only way in.
+ */
+export const beavermindProvider = (): OAuthConfig<BeavermindProfile> | null => {
+	const issuer = serverEnv().BEAVERMIND_ISSUER;
+	const clientId = serverEnv().BEAVERMIND_CLIENT_ID;
+	const clientSecret = serverEnv().BEAVERMIND_CLIENT_SECRET;
+	if (!issuer || !clientId || !clientSecret) return null;
+	const base = issuer.replace(/\/$/, "");
+	return {
+		id: "beavermind",
+		name: "Beavermind",
+		type: "oauth",
+		wellKnown: `${base}/.well-known/openid-configuration`,
+		clientId,
+		clientSecret,
+		authorization: { params: { scope: "openid profile email" } },
+		checks: ["pkce", "state"],
+		// The provider signs ID tokens with EdDSA; openid-client assumes RS256
+		// unless told otherwise.
+		client: { id_token_signed_response_alg: "EdDSA" },
+		// Email and name are guaranteed at UserInfo, not inside the ID token.
+		idToken: false,
+		userinfo: `${base}/oauth2/userinfo`,
+		// Existing accounts were created by email code. Linking by verified
+		// email keeps everyone's organization, videos and integrations.
+		allowDangerousEmailAccountLinking: true,
+		profile(profile) {
+			const email = profile.email?.trim().toLowerCase();
+			return {
+				id: profile.sub,
+				name:
+					profile.name ||
+					[profile.given_name, profile.family_name].filter(Boolean).join(" ") ||
+					email?.split("@")[0] ||
+					profile.sub,
+				email,
+				image: profile.picture ?? null,
+			};
+		},
+	};
+};
+
 export const authOptions = (ssoContext?: SsoAuthContext): NextAuthOptions => {
 	let _adapter: Adapter | undefined;
 	let _providers: Provider[] | undefined;
@@ -81,6 +137,11 @@ export const authOptions = (ssoContext?: SsoAuthContext): NextAuthOptions => {
 		},
 		get providers() {
 			if (_providers) return _providers;
+			const beavermind = beavermindProvider();
+			if (beavermind) {
+				_providers = [beavermind];
+				return _providers;
+			}
 			const appleClientId = serverEnv().APPLE_CLIENT_ID;
 			const appleClientSecret = serverEnv().APPLE_CLIENT_SECRET;
 			_providers = [

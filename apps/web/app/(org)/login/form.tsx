@@ -61,9 +61,11 @@ export function LoginForm() {
 	);
 	const mobileAppleSignInStarted = useRef(false);
 	const mobileGoogleSignInStarted = useRef(false);
+	const beavermindSignInStarted = useRef(false);
 	const workosSignInStarted = useRef(false);
 	const workosSignInPending = useRef(false);
 	const loginFormMounted = useRef(false);
+	const publicEnv = usePublicEnv();
 	const theme = Cookies.get("theme") || "light";
 	const getNextPath = useCallback(
 		() => (next ? getSafeNextPath(next, window.location.origin) : null),
@@ -163,6 +165,18 @@ export function LoginForm() {
 		});
 	}, [getNextPath]);
 
+	const handleBeavermindSignIn = useCallback(() => {
+		const nextPath = getNextPath();
+		trackEvent("auth_started", {
+			method: "beavermind",
+			is_signup: false,
+			auth_surface: "login",
+		});
+		signIn("beavermind", {
+			...(nextPath ? { callbackUrl: nextPath } : {}),
+		});
+	}, [getNextPath]);
+
 	const handleAppleSignIn = useCallback(() => {
 		const nextPath = getNextPath();
 		trackEvent("auth_started", {
@@ -217,6 +231,17 @@ export function LoginForm() {
 		},
 		[getNextPath],
 	);
+
+	// Beavermind Identity is the only sign-in method when configured, so go
+	// straight there. A returned ?error= must render rather than bounce, or
+	// the two sites would redirect each other forever.
+	useEffect(() => {
+		if (!publicEnv.beavermindAuthAvailable) return;
+		if (searchParams?.get("error")) return;
+		if (beavermindSignInStarted.current) return;
+		beavermindSignInStarted.current = true;
+		handleBeavermindSignIn();
+	}, [handleBeavermindSignIn, publicEnv.beavermindAuthAvailable, searchParams]);
 
 	useEffect(() => {
 		if (searchParams?.get("mobileProvider") === "apple") {
@@ -338,7 +363,18 @@ export function LoginForm() {
 								}}
 								className="px-1"
 							>
-								{showOrgInput ? (
+								{publicEnv.beavermindAuthAvailable ? (
+									<motion.div
+										key="beavermind"
+										layout
+										initial={{ opacity: 0, y: 10 }}
+										animate={{ opacity: 1, y: 0, transition: { delay: 0.1 } }}
+										exit={{ opacity: 0, y: -10, transition: { duration: 0.1 } }}
+										transition={{ duration: 0.2, ease: "easeInOut" }}
+									>
+										<BeavermindLogin onClick={handleBeavermindSignIn} />
+									</motion.div>
+								) : showOrgInput ? (
 									<motion.div
 										key="sso"
 										layout
@@ -437,8 +473,9 @@ export function LoginForm() {
 							layout="position"
 							className="pt-3 text-xs text-center text-gray-9"
 						>
-							By typing your email and clicking continue, you acknowledge that
-							you have both read and agree to Cap's{" "}
+							{publicEnv.beavermindAuthAvailable
+								? "By continuing, you acknowledge that you have both read and agree to Cap's"
+								: "By typing your email and clicking continue, you acknowledge that you have both read and agree to Cap's"}{" "}
 							<Link
 								href="/terms"
 								target="_blank"
@@ -649,3 +686,19 @@ const NormalLogin = ({
 		</motion.div>
 	);
 };
+
+const BeavermindLogin = ({ onClick }: { onClick: () => void }) => (
+	<motion.div layout className="flex flex-col space-y-3">
+		<MotionButton
+			variant="dark"
+			type="button"
+			className="w-full"
+			onClick={onClick}
+		>
+			Continue with Beavermind
+		</MotionButton>
+		<p className="text-xs leading-5 text-center text-gray-10">
+			You will be sent to Beavermind Identity and straight back.
+		</p>
+	</motion.div>
+);

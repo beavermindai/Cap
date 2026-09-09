@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@cap/database/auth/session";
+import { serverEnv } from "@cap/env";
 import { faArrowLeft } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import Link from "next/link";
@@ -41,6 +42,13 @@ export default async function SignupPage(props: {
 	);
 	if (session && !isSsoEntry) {
 		redirect("/dashboard");
+	}
+	// Accounts come from Beavermind Identity; there is nothing to sign up for.
+	if (serverEnv().BEAVERMIND_CLIENT_ID) {
+		const next = Array.isArray(searchParams.next)
+			? searchParams.next[0]
+			: searchParams.next;
+		redirect(next ? `/login?next=${encodeURIComponent(next)}` : "/login");
 	}
 	return (
 		<div className="flex relative justify-center items-center w-full h-screen bg-gray-2">

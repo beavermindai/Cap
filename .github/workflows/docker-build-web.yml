@@ -1,26 +1,27 @@
 name: "Docker Build Web"
 
+# Beavermind fork: builds the amd64 image for rec.beavermind.cloud on every
+# push to the `beavermind` branch and publishes it as
+#   ghcr.io/beavermindai/cap-web:bm-<short sha>   (immutable, pin this)
+#   ghcr.io/beavermindai/cap-web:beavermind       (moving)
+# Upstream builds multi-arch on manual dispatch only; our VPS is x86_64.
+
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag for the Docker image"
+        description: "Moving tag to apply in addition to bm-<sha>"
         required: false
-        default: "latest"
+        default: "beavermind"
         type: string
+  push:
+    branches:
+      - beavermind
 
 jobs:
   build:
-    name: Build Docker Image (${{ matrix.platform }})
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        include:
-          - platform: amd64
-            runner: ubuntu-24.04
-          - platform: arm64
-            runner: ubuntu-24.04-arm
-      fail-fast: false
+    name: Build Docker Image (amd64)
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -44,67 +45,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Downcase GITHUB_REPOSITORY_OWNER
+      - name: Compute image tags
         run: |
-          echo "REPOSITORY_OWNER=${GITHUB_REPOSITORY_OWNER@L}" >>${GITHUB_ENV}
+          echo "REPOSITORY_OWNER=${GITHUB_REPOSITORY_OWNER@L}" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
 
-      - name: Build and Push Platform Image
-        id: build
+      - name: Build and Push Image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: apps/web/Dockerfile
-          platforms: linux/${{ matrix.platform }}
+          platforms: linux/amd64
           push: true
-          outputs: type=image,name=ghcr.io/${{ env.REPOSITORY_OWNER }}/cap-web,push-by-digest=true
-          cache-from: type=gha,scope=buildx-${{ matrix.platform }}
-          cache-to: type=gha,mode=max,scope=buildx-${{ matrix.platform }}
-
-      - name: Export Digest
-        run: |
-          mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-
-      - name: Upload Digest
-        uses: actions/upload-artifact@v4
-        with:
-          name: digests-${{ matrix.platform }}
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  merge:
-    name: Create Multi-Architecture Manifest
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Download Digests
-        uses: actions/download-artifact@v4
-        with:
-          path: /tmp/digests
-          pattern: digests-*
-          merge-multiple: true
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Downcase GITHUB_REPOSITORY_OWNER
-        run: |
-          echo "REPOSITORY_OWNER=${GITHUB_REPOSITORY_OWNER@L}" >>${GITHUB_ENV}
-
-      - name: Create Image Manifest
-        run: |
-          docker buildx imagetools create -t ghcr.io/${{ env.REPOSITORY_OWNER }}/cap-web:${{ inputs.tag || 'latest' }} \
-            $(find /tmp/digests -type f -not -path "*/\.*" -exec basename {} \; | xargs -I {} echo "ghcr.io/${{ env.REPOSITORY_OWNER }}/cap-web@sha256:{}")
+          tags: |
+            ghcr.io/${{ env.REPOSITORY_OWNER }}/cap-web:bm-${{ env.SHORT_SHA }}
+            ghcr.io/${{ env.REPOSITORY_OWNER }}/cap-web:${{ inputs.tag || 'beavermind' }}
+          cache-from: type=gha,scope=buildx-amd64
+          cache-to: type=gha,mode=max,scope=buildx-amd64

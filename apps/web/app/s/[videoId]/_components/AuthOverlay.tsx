@@ -151,6 +151,34 @@ const StepOne = ({
 		});
 	};
 	const publicEnv = usePublicEnv();
+	const handleBeavermindSignIn = () => {
+		trackEvent("auth_started", {
+			method: "beavermind",
+			is_signup: false,
+			auth_surface: "share_overlay",
+			video_id: videoId,
+		});
+		setLoading(true);
+		signIn("beavermind", {
+			callbackUrl: `${window.location.origin}/s/${videoId}`,
+		});
+	};
+
+	// With Beavermind Identity there is no email or Google path to offer.
+	if (publicEnv.beavermindAuthAvailable) {
+		return (
+			<div className="flex flex-col gap-3">
+				<Button
+					variant="dark"
+					type="button"
+					onClick={handleBeavermindSignIn}
+					disabled={loading}
+				>
+					Continue with Beavermind
+				</Button>
+			</div>
+		);
+	}
 
 	return (
 		<form

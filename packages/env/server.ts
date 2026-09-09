@@ -75,6 +75,14 @@ function createServerEnv() {
 			WORKOS_CLIENT_ID: z.string().optional(),
 			WORKOS_API_KEY: z.string().optional(),
 
+			/// Beavermind Identity (OIDC)
+			// Provide all three to sign in through auth.beavermind.cloud. When set,
+			// Google, Apple, WorkOS and email-code login are switched off; the
+			// Google client stays in use for the Drive storage integration.
+			BEAVERMIND_ISSUER: z.string().optional(),
+			BEAVERMIND_CLIENT_ID: z.string().optional(),
+			BEAVERMIND_CLIENT_SECRET: z.string().optional(),
+
 			/// Settings
 			CAP_VIDEOS_DEFAULT_PUBLIC: boolString(true).describe(
 				"Should videos be public or private by default",
