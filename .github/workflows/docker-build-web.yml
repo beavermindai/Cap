@@ -62,3 +62,22 @@ jobs:
             ghcr.io/${{ env.REPOSITORY_OWNER }}/cap-web:${{ inputs.tag || 'beavermind' }}
           cache-from: type=gha,scope=buildx-amd64
           cache-to: type=gha,mode=max,scope=buildx-amd64
+
+      # The GHCR package is private and the VPS has no registry credentials, so
+      # the same image is also handed over as a workflow artifact:
+      #   gh run download <run-id> -n cap-web-image  →  scp  →  docker load
+      - name: Export image as artifact
+        run: |
+          IMG="ghcr.io/${REPOSITORY_OWNER}/cap-web:bm-${SHORT_SHA}"
+          docker pull -q "$IMG"
+          docker save "$IMG" | gzip -1 > cap-web-bm-${SHORT_SHA}.tar.gz
+          ls -la cap-web-bm-${SHORT_SHA}.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cap-web-image
+          path: cap-web-bm-*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
