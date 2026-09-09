@@ -87,9 +87,21 @@ export const beavermindProvider = (): OAuthConfig<BeavermindProfile> | null => {
 		// The provider signs ID tokens with EdDSA; openid-client assumes RS256
 		// unless told otherwise.
 		client: { id_token_signed_response_alg: "EdDSA" },
-		// Email and name are guaranteed at UserInfo, not inside the ID token.
-		idToken: false,
-		userinfo: `${base}/oauth2/userinfo`,
+		// The token response carries an ID token, so openid-client insists on
+		// the OIDC callback (it validates the EdDSA signature via JWKS).
+		idToken: true,
+		userinfo: {
+			url: `${base}/oauth2/userinfo`,
+			// The ID token is thin; email and name are guaranteed at UserInfo.
+			// Merge both so the profile is complete either way.
+			async request({ tokens, client }) {
+				const claims = tokens.claims();
+				const info = tokens.access_token
+					? await client.userinfo(tokens.access_token)
+					: {};
+				return { ...claims, ...info } as BeavermindProfile;
+			},
+		},
 		// Existing accounts were created by email code. Linking by verified
 		// email keeps everyone's organization, videos and integrations.
 		allowDangerousEmailAccountLinking: true,
